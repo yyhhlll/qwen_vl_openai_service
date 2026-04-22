@@ -1,0 +1,470 @@
+x-backend-common: &backend-common
+  image: ${IMAGE_NAME:-qwen27-vllm-custom}
+  network_mode: host
+  shm_size: ${SHM_SIZE:-200g}
+  privileged: true
+  user: root
+  restart: unless-stopped
+  devices:
+    - /dev/kfd
+    - /dev/dri
+    - /dev/mkfd
+  group_add:
+    - video
+  cap_add:
+    - SYS_PTRACE
+  security_opt:
+    - seccomp=unconfined
+  environment: &backend-env
+    MODEL_PATH: ${MODEL_PATH:-/models/Qwen3.5-4B}
+    MODEL_NAME: ${MODEL_NAME:-Qwen3.5-4B}
+    API_KEY: ${API_KEY:-1234}
+    MAX_BATCH_SIZE: ${MAX_BATCH_SIZE:-1}
+    BATCH_WAIT_MS: ${BATCH_WAIT_MS:-50}
+    GPU_MEMORY_CLEANUP_INTERVAL: ${GPU_MEMORY_CLEANUP_INTERVAL:-32}
+    OFFLINE_MODE: ${OFFLINE_MODE:-1}
+    ALLOW_REMOTE_IMAGE_URLS: ${ALLOW_REMOTE_IMAGE_URLS:-0}
+    HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+    TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
+  volumes: &backend-volumes
+    - /opt/hyhal:/opt/hyhal:ro
+    - /data/model/Qwen3.5-4B:/models/Qwen3.5-4B
+    - /root/evalscope_offline:/root/evalscope_offline
+    - .:/app/qwen_vl_openai_service
+
+x-proxy-common: &proxy-common
+  image: ${IMAGE_NAME:-qwen27-vllm-custom}
+  network_mode: host
+  user: root
+  restart: unless-stopped
+  volumes:
+    - .:/app/qwen_vl_openai_service
+  environment:
+    API_KEY: ${API_KEY:-1234}
+    BACKEND_URLS: >-
+      http://10.2.0.129:8001,http://10.2.0.129:8002,http://10.2.0.129:8003,http://10.2.0.129:8004,
+      http://10.2.0.129:8005,http://10.2.0.129:8006,http://10.2.0.129:8007,http://10.2.0.129:8008,
+      http://10.2.0.129:8009,http://10.2.0.129:8010,http://10.2.0.129:8011,http://10.2.0.129:8012,
+      http://10.2.0.129:8013,http://10.2.0.129:8014,http://10.2.0.129:8015,http://10.2.0.129:8016,
+      http://10.2.0.130:8001,http://10.2.0.130:8002,http://10.2.0.130:8003,http://10.2.0.130:8004,
+      http://10.2.0.130:8005,http://10.2.0.130:8006,http://10.2.0.130:8007,http://10.2.0.130:8008,
+      http://10.2.0.130:8009,http://10.2.0.130:8010,http://10.2.0.130:8011,http://10.2.0.130:8012,
+      http://10.2.0.130:8013,http://10.2.0.130:8014,http://10.2.0.130:8015,http://10.2.0.130:8016,
+      http://10.2.0.131:8001,http://10.2.0.131:8002,http://10.2.0.131:8003,http://10.2.0.131:8004,
+      http://10.2.0.131:8005,http://10.2.0.131:8006,http://10.2.0.131:8007,http://10.2.0.131:8008
+
+services:
+  qwen35-129-g0a:
+    <<: *backend-common
+    container_name: qwen35-129-g0a
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "0"
+      ROCR_VISIBLE_DEVICES: "0"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8001"]
+
+  qwen35-129-g0b:
+    <<: *backend-common
+    container_name: qwen35-129-g0b
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "0"
+      ROCR_VISIBLE_DEVICES: "0"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8002"]
+
+  qwen35-129-g1a:
+    <<: *backend-common
+    container_name: qwen35-129-g1a
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "1"
+      ROCR_VISIBLE_DEVICES: "1"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8003"]
+
+  qwen35-129-g1b:
+    <<: *backend-common
+    container_name: qwen35-129-g1b
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "1"
+      ROCR_VISIBLE_DEVICES: "1"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8004"]
+
+  qwen35-129-g2a:
+    <<: *backend-common
+    container_name: qwen35-129-g2a
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "2"
+      ROCR_VISIBLE_DEVICES: "2"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8005"]
+
+  qwen35-129-g2b:
+    <<: *backend-common
+    container_name: qwen35-129-g2b
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "2"
+      ROCR_VISIBLE_DEVICES: "2"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8006"]
+
+  qwen35-129-g3a:
+    <<: *backend-common
+    container_name: qwen35-129-g3a
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "3"
+      ROCR_VISIBLE_DEVICES: "3"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8007"]
+
+  qwen35-129-g3b:
+    <<: *backend-common
+    container_name: qwen35-129-g3b
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "3"
+      ROCR_VISIBLE_DEVICES: "3"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8008"]
+
+  qwen35-129-g4a:
+    <<: *backend-common
+    container_name: qwen35-129-g4a
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "4"
+      ROCR_VISIBLE_DEVICES: "4"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8009"]
+
+  qwen35-129-g4b:
+    <<: *backend-common
+    container_name: qwen35-129-g4b
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "4"
+      ROCR_VISIBLE_DEVICES: "4"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8010"]
+
+  qwen35-129-g5a:
+    <<: *backend-common
+    container_name: qwen35-129-g5a
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "5"
+      ROCR_VISIBLE_DEVICES: "5"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8011"]
+
+  qwen35-129-g5b:
+    <<: *backend-common
+    container_name: qwen35-129-g5b
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "5"
+      ROCR_VISIBLE_DEVICES: "5"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8012"]
+
+  qwen35-129-g6a:
+    <<: *backend-common
+    container_name: qwen35-129-g6a
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "6"
+      ROCR_VISIBLE_DEVICES: "6"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8013"]
+
+  qwen35-129-g6b:
+    <<: *backend-common
+    container_name: qwen35-129-g6b
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "6"
+      ROCR_VISIBLE_DEVICES: "6"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8014"]
+
+  qwen35-129-g7a:
+    <<: *backend-common
+    container_name: qwen35-129-g7a
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "7"
+      ROCR_VISIBLE_DEVICES: "7"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8015"]
+
+  qwen35-129-g7b:
+    <<: *backend-common
+    container_name: qwen35-129-g7b
+    profiles: ["host129"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "7"
+      ROCR_VISIBLE_DEVICES: "7"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8016"]
+
+  qwen35-130-g0:
+    <<: *backend-common
+    container_name: qwen35-130-g0
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "0"
+      ROCR_VISIBLE_DEVICES: "0"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8001"]
+
+  qwen35-130-g0b:
+    <<: *backend-common
+    container_name: qwen35-130-g0b
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "0"
+      ROCR_VISIBLE_DEVICES: "0"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8002"]
+
+  qwen35-130-g1:
+    <<: *backend-common
+    container_name: qwen35-130-g1
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "1"
+      ROCR_VISIBLE_DEVICES: "1"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8003"]
+
+  qwen35-130-g1b:
+    <<: *backend-common
+    container_name: qwen35-130-g1b
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "1"
+      ROCR_VISIBLE_DEVICES: "1"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8004"]
+
+  qwen35-130-g2:
+    <<: *backend-common
+    container_name: qwen35-130-g2
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "2"
+      ROCR_VISIBLE_DEVICES: "2"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8005"]
+
+  qwen35-130-g2b:
+    <<: *backend-common
+    container_name: qwen35-130-g2b
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "2"
+      ROCR_VISIBLE_DEVICES: "2"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8006"]
+
+  qwen35-130-g3:
+    <<: *backend-common
+    container_name: qwen35-130-g3
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "3"
+      ROCR_VISIBLE_DEVICES: "3"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8007"]
+
+  qwen35-130-g3b:
+    <<: *backend-common
+    container_name: qwen35-130-g3b
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "3"
+      ROCR_VISIBLE_DEVICES: "3"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8008"]
+
+  qwen35-130-g4:
+    <<: *backend-common
+    container_name: qwen35-130-g4
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "4"
+      ROCR_VISIBLE_DEVICES: "4"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8009"]
+
+  qwen35-130-g4b:
+    <<: *backend-common
+    container_name: qwen35-130-g4b
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "4"
+      ROCR_VISIBLE_DEVICES: "4"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8010"]
+
+  qwen35-130-g5:
+    <<: *backend-common
+    container_name: qwen35-130-g5
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "5"
+      ROCR_VISIBLE_DEVICES: "5"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8011"]
+
+  qwen35-130-g5b:
+    <<: *backend-common
+    container_name: qwen35-130-g5b
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "5"
+      ROCR_VISIBLE_DEVICES: "5"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8012"]
+
+  qwen35-130-g6:
+    <<: *backend-common
+    container_name: qwen35-130-g6
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "6"
+      ROCR_VISIBLE_DEVICES: "6"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8013"]
+
+  qwen35-130-g6b:
+    <<: *backend-common
+    container_name: qwen35-130-g6b
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "6"
+      ROCR_VISIBLE_DEVICES: "6"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8014"]
+
+  qwen35-130-g7:
+    <<: *backend-common
+    container_name: qwen35-130-g7
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "7"
+      ROCR_VISIBLE_DEVICES: "7"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8015"]
+
+  qwen35-130-g7b:
+    <<: *backend-common
+    container_name: qwen35-130-g7b
+    profiles: ["host130"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "7"
+      ROCR_VISIBLE_DEVICES: "7"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8016"]
+
+  qwen35-131-g4:
+    <<: *backend-common
+    container_name: qwen35-131-g4
+    profiles: ["host131"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "4"
+      ROCR_VISIBLE_DEVICES: "4"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8001"]
+
+  qwen35-131-g4b:
+    <<: *backend-common
+    container_name: qwen35-131-g4b
+    profiles: ["host131"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "4"
+      ROCR_VISIBLE_DEVICES: "4"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8002"]
+
+  qwen35-131-g5:
+    <<: *backend-common
+    container_name: qwen35-131-g5
+    profiles: ["host131"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "5"
+      ROCR_VISIBLE_DEVICES: "5"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8003"]
+
+  qwen35-131-g5b:
+    <<: *backend-common
+    container_name: qwen35-131-g5b
+    profiles: ["host131"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "5"
+      ROCR_VISIBLE_DEVICES: "5"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8004"]
+
+  qwen35-131-g6:
+    <<: *backend-common
+    container_name: qwen35-131-g6
+    profiles: ["host131"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "6"
+      ROCR_VISIBLE_DEVICES: "6"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8005"]
+
+  qwen35-131-g6b:
+    <<: *backend-common
+    container_name: qwen35-131-g6b
+    profiles: ["host131"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "6"
+      ROCR_VISIBLE_DEVICES: "6"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8006"]
+
+  qwen35-131-g7:
+    <<: *backend-common
+    container_name: qwen35-131-g7
+    profiles: ["host131"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "7"
+      ROCR_VISIBLE_DEVICES: "7"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8007"]
+
+  qwen35-131-g7b:
+    <<: *backend-common
+    container_name: qwen35-131-g7b
+    profiles: ["host131"]
+    environment:
+      <<: *backend-env
+      HIP_VISIBLE_DEVICES: "7"
+      ROCR_VISIBLE_DEVICES: "7"
+    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8008"]
+
+  qwen35-proxy:
+    <<: *proxy-common
+    container_name: qwen35-proxy
+    profiles: ["host129", "proxy"]
+    command: ["bash", "-lc", "python3 -m uvicorn proxy:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 19000"]
+
+  qwen35-nginx:
+    image: ${NGINX_IMAGE:-nginx:stable-alpine}
+    container_name: qwen35-nginx
+    network_mode: host
+    restart: unless-stopped
+    profiles: ["nginx"]
+    volumes:
+      - ./qwen35.nginx.conf:/etc/nginx/conf.d/default.conf:ro
