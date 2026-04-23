@@ -32,6 +32,29 @@ class Scheduler:
     async def submit(self, state: RequestState) -> None:
         await self._queue.put(state)
 
+    @staticmethod
+    def _split_batch_by_image_modality(
+        batch: list[RequestState],
+    ) -> list[list[RequestState]]:
+        if len(batch) < 2:
+            return [batch]
+
+        image_batch: list[RequestState] = []
+        text_batch: list[RequestState] = []
+        for state in batch:
+            if state.images:
+                image_batch.append(state)
+            else:
+                text_batch.append(state)
+
+        if not image_batch or not text_batch:
+            return [batch]
+
+        first_has_images = bool(batch[0].images)
+        if first_has_images:
+            return [image_batch, text_batch]
+        return [text_batch, image_batch]
+
     async def _collect_batch(self) -> list[RequestState]:
         """Wait for first request, then collect more within the time window."""
         first = await self._queue.get()
@@ -52,13 +75,14 @@ class Scheduler:
     async def _loop(self) -> None:
         while True:
             batch = await self._collect_batch()
-            try:
-                await self.engine.generate_batch(batch)
-            except Exception as exc:
-                for state in batch:
-                    state.error = str(exc)
-                    state.finished = True
-            finally:
-                for state in batch:
-                    if not state.result_future.done():
-                        state.result_future.set_result(None)
+            for sub_batch in self._split_batch_by_image_modality(batch):
+                try:
+                    await self.engine.generate_batch(sub_batch)
+                except Exception as exc:
+                    for state in sub_batch:
+                        state.error = str(exc)
+                        state.finished = True
+                finally:
+                    for state in sub_batch:
+                        if not state.result_future.done():
+                            state.result_future.set_result(None)

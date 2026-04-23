@@ -88,7 +88,7 @@ class TransformersVLEngine:
         if source.startswith(("http://", "https://")):
             if not self.allow_remote_image_urls:
                 raise ValueError(
-                    "Remote image URLs are disabled in offline mode. "
+                    "Remote image URLs are disabled by configuration. "
                     "Use a local file path or a data:image base64 URL."
                 )
             with urlopen(source) as response:

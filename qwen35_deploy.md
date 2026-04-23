@@ -27,7 +27,7 @@ cd /root/qwen_vl_openai_service
 离线默认已开启：
 
 - `OFFLINE_MODE=1`
-- `ALLOW_REMOTE_IMAGE_URLS=0`
+- `ALLOW_REMOTE_IMAGE_URLS=1`
 - `HF_HUB_OFFLINE=1`
 - `TRANSFORMERS_OFFLINE=1`
 
@@ -48,14 +48,6 @@ NGINX_IMAGE=<local-nginx-image> docker compose --profile nginx up -d qwen35-ngin
 
 ### 130
 
-先清测试容器：
-
-```bash
-docker ps -aq | xargs -r docker rm -f
-```
-
-再启动：
-
 ```bash
 docker compose --profile host130 up -d
 ```
@@ -69,9 +61,9 @@ docker compose --profile host131 up -d
 ## 停止
 
 ```bash
-docker compose --profile host129 down --remove-orphans
-docker compose --profile host130 down --remove-orphans
-docker compose --profile host131 down --remove-orphans
+docker compose --profile host129 stop
+docker compose --profile host130 stop
+docker compose --profile host131 stop
 ```
 
 ## 检查

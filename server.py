@@ -70,7 +70,7 @@ GPU_MEMORY_CLEANUP_INTERVAL = max(
     0,
 )
 OFFLINE_MODE = _env_flag("OFFLINE_MODE", "1")
-ALLOW_REMOTE_IMAGE_URLS = _env_flag("ALLOW_REMOTE_IMAGE_URLS", "0")
+ALLOW_REMOTE_IMAGE_URLS = _env_flag("ALLOW_REMOTE_IMAGE_URLS", "1")
 
 engine = TransformersVLEngine(
     MODEL_PATH,

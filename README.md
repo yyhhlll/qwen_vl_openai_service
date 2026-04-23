@@ -97,9 +97,10 @@ pip install fastapi uvicorn "pydantic>=2" httpx pillow transformers torch
   - 默认值：`1`
   - 离线加载本地模型和 processor，不访问远程模型仓库
 - `ALLOW_REMOTE_IMAGE_URLS`
-  - 默认值：`0`
-  - 默认禁止 `http(s)` 图片 URL
+  - 默认值：`1`
+  - 默认允许 `http(s)` 图片 URL
   - 仍然支持本地图片路径和 `data:image/...` base64
+  - 如需完全离线或禁用远程取图，可显式设为 `0`
 
 代理 `proxy.py` 额外使用：
 
@@ -213,7 +214,8 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 - `data:image/png;base64,...`
 
-默认离线部署下不支持 `https://...` 远程图片 URL。
+也可以直接传服务端能访问到的远程图片 URL，例如内网地址 `http://10.2.0.129:9000/...`。
+如需完全离线运行，可把 `ALLOW_REMOTE_IMAGE_URLS=0` 关掉远程取图。
 
 ### 4. SSE 伪流式输出
 
