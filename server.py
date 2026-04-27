@@ -71,6 +71,7 @@ GPU_MEMORY_CLEANUP_INTERVAL = max(
 )
 OFFLINE_MODE = _env_flag("OFFLINE_MODE", "1")
 ALLOW_REMOTE_IMAGE_URLS = _env_flag("ALLOW_REMOTE_IMAGE_URLS", "1")
+REMOTE_IMAGE_TIMEOUT_SECONDS = float(os.getenv("REMOTE_IMAGE_TIMEOUT_SECONDS", "60"))
 
 engine = TransformersVLEngine(
     MODEL_PATH,
@@ -78,6 +79,7 @@ engine = TransformersVLEngine(
     memory_cleanup_interval=GPU_MEMORY_CLEANUP_INTERVAL,
     offline_mode=OFFLINE_MODE,
     allow_remote_image_urls=ALLOW_REMOTE_IMAGE_URLS,
+    remote_image_timeout_seconds=REMOTE_IMAGE_TIMEOUT_SECONDS,
 )
 scheduler = Scheduler(engine, max_batch_size=MAX_BATCH_SIZE, batch_wait_ms=BATCH_WAIT_MS)
 
@@ -123,6 +125,7 @@ async def health() -> dict[str, object]:
         "offline": {
             "offline_mode": engine.offline_mode,
             "allow_remote_image_urls": engine.allow_remote_image_urls,
+            "remote_image_timeout_seconds": engine.remote_image_timeout_seconds,
         },
         "scheduler": {
             "queue_size": scheduler._queue.qsize(),

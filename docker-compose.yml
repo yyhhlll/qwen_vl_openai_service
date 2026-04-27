@@ -24,6 +24,7 @@ x-backend-common: &backend-common
     GPU_MEMORY_CLEANUP_INTERVAL: ${GPU_MEMORY_CLEANUP_INTERVAL:-32}
     OFFLINE_MODE: ${OFFLINE_MODE:-1}
     ALLOW_REMOTE_IMAGE_URLS: ${ALLOW_REMOTE_IMAGE_URLS:-1}
+    REMOTE_IMAGE_TIMEOUT_SECONDS: ${REMOTE_IMAGE_TIMEOUT_SECONDS:-60}
     HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
     TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
   volumes: &backend-volumes
@@ -467,4 +468,4 @@ services:
     restart: unless-stopped
     profiles: ["nginx"]
     volumes:
-      - ./qwen35.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./qwen35.nginx.conf:/etc/nginx/nginx.conf:ro

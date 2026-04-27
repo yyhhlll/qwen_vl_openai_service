@@ -48,6 +48,7 @@
 - [state.py](/Users/yyhhl/Documents/New%20project/qwen_vl_openai_service/state.py): 单请求运行状态
 - [test_safety_compliance.py](/Users/yyhhl/Documents/New%20project/qwen_vl_openai_service/test_safety_compliance.py): 本地安全审查/合规提示词测试脚本
 - [qwen35.nginx.conf](/Users/yyhhl/Documents/New%20project/qwen_vl_openai_service/qwen35.nginx.conf): 三机多后端 `nginx` 入口配置
+  - 已针对大模型长上下文请求做了入口调优：增大 `client_body_buffer_size`，并关闭 `proxy_request_buffering`，避免大请求体频繁落盘后再转发
 
 ## 依赖
 
@@ -101,6 +102,10 @@ pip install fastapi uvicorn "pydantic>=2" httpx pillow transformers torch
   - 默认允许 `http(s)` 图片 URL
   - 仍然支持本地图片路径和 `data:image/...` base64
   - 如需完全离线或禁用远程取图，可显式设为 `0`
+- `REMOTE_IMAGE_TIMEOUT_SECONDS`
+  - 默认值：`10`
+  - 远程图片抓取超时时间（秒）
+  - 用于避免内网图片源卡住时把整个请求长时间挂死
 
 代理 `proxy.py` 额外使用：
 
@@ -216,6 +221,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 也可以直接传服务端能访问到的远程图片 URL，例如内网地址 `http://10.2.0.129:9000/...`。
 如需完全离线运行，可把 `ALLOW_REMOTE_IMAGE_URLS=0` 关掉远程取图。
+如果远程图片源偶发卡顿，可调小 `REMOTE_IMAGE_TIMEOUT_SECONDS`，让失败尽快返回而不是长时间超时。
 
 ### 4. SSE 伪流式输出
 

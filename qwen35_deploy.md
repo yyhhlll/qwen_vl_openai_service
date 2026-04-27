@@ -28,6 +28,7 @@ cd /root/qwen_vl_openai_service
 
 - `OFFLINE_MODE=1`
 - `ALLOW_REMOTE_IMAGE_URLS=1`
+- `REMOTE_IMAGE_TIMEOUT_SECONDS=60`
 - `HF_HUB_OFFLINE=1`
 - `TRANSFORMERS_OFFLINE=1`
 
@@ -44,6 +45,12 @@ docker compose --profile nginx up -d qwen35-nginx
 
 ```bash
 NGINX_IMAGE=<local-nginx-image> docker compose --profile nginx up -d qwen35-nginx
+```
+
+如果只更新了 [qwen35.nginx.conf](/Users/yyhhl/Documents/New project/qwen_vl_openai_service/qwen35.nginx.conf)，可直接重启 nginx 容器生效：
+
+```bash
+docker compose restart qwen35-nginx
 ```
 
 ### 130
@@ -72,6 +79,8 @@ docker compose --profile host131 stop
 docker compose ps
 docker logs --tail 100 qwen35-nginx
 docker logs --tail 100 qwen35-129-g0a
+curl -s http://127.0.0.1:8000/health
+curl -s http://127.0.0.1:8000/nginx_status
 ```
 
 ## 验证

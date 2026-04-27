@@ -7,12 +7,17 @@ import unittest
 from unittest.mock import patch
 
 
+class _FakeRequestState:
+    def __init__(self, **kwargs) -> None:
+        self.__dict__.update(kwargs)
+
+
 def _load_engine_module():
     fake_protocol = types.ModuleType("protocol")
     fake_protocol.ChatMessage = object
 
     fake_state = types.ModuleType("state")
-    fake_state.RequestState = object
+    fake_state.RequestState = _FakeRequestState
 
     with patch.dict(
         sys.modules,
@@ -115,10 +120,48 @@ class ImageUrlSupportTests(unittest.TestCase):
                 )
 
         mocked_urlopen.assert_called_once_with(
-            "http://10.2.0.129:9000/llm-detect/example.png"
+            "http://10.2.0.129:9000/llm-detect/example.png",
+            timeout=10.0,
         )
         self.assertEqual(opened_payloads, [b"remote-image-bytes"])
         self.assertEqual(loaded, {"mode": "RGB"})
+
+    def test_build_state_offloads_normalization_to_thread(self) -> None:
+        engine = _load_engine_module()
+        test_engine = engine.TransformersVLEngine("unused")
+        async def fake_ensure_loaded() -> None:
+            return None
+
+        test_engine.ensure_loaded = fake_ensure_loaded
+        test_engine.processor = types.SimpleNamespace(
+            apply_chat_template=lambda *args, **kwargs: "prompt-text"
+        )
+
+        request = types.SimpleNamespace(messages=["message"])
+        recorded_calls: list[tuple[object, tuple[object, ...]]] = []
+
+        async def fake_to_thread(func, *args):
+            recorded_calls.append((func, args))
+            return ([{"role": "user", "content": "ok"}], [])
+
+        async def run_test() -> None:
+            with patch.object(engine.asyncio, "to_thread", side_effect=fake_to_thread):
+                state = await test_engine.build_state("req-1", request)
+
+            self.assertEqual(state.request_id, "req-1")
+            self.assertEqual(state.prompt_text, "prompt-text")
+            self.assertEqual(state.images, [])
+            self.assertEqual(len(recorded_calls), 1)
+            self.assertIs(recorded_calls[0][0].__self__, test_engine)
+            self.assertIs(
+                recorded_calls[0][0].__func__,
+                test_engine._normalize_messages.__func__,
+            )
+            self.assertEqual(recorded_calls[0][1], (request.messages,))
+
+        import asyncio
+
+        asyncio.run(run_test())
 
 
 class SchedulerBatchSplitTests(unittest.TestCase):

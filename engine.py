@@ -30,6 +30,7 @@ class TransformersVLEngine:
         memory_cleanup_interval: int = 32,
         offline_mode: bool = True,
         allow_remote_image_urls: bool = False,
+        remote_image_timeout_seconds: float = 60.0,
     ) -> None:
         self.model_path = model_path
         self.device_map = device_map
@@ -37,6 +38,7 @@ class TransformersVLEngine:
         self.memory_cleanup_interval = max(memory_cleanup_interval, 0)
         self.offline_mode = offline_mode
         self.allow_remote_image_urls = allow_remote_image_urls
+        self.remote_image_timeout_seconds = max(remote_image_timeout_seconds, 0.1)
         self.max_model_len: int = 0
         self.processor = None
         self.model = None
@@ -91,7 +93,7 @@ class TransformersVLEngine:
                     "Remote image URLs are disabled by configuration. "
                     "Use a local file path or a data:image base64 URL."
                 )
-            with urlopen(source) as response:
+            with urlopen(source, timeout=self.remote_image_timeout_seconds) as response:
                 return Image.open(io.BytesIO(response.read())).convert("RGB")
         return Image.open(Path(source)).convert("RGB")
 
@@ -119,7 +121,12 @@ class TransformersVLEngine:
     async def build_state(self, request_id: str, request: Any) -> RequestState:
         await self.ensure_loaded()
         assert self.processor is not None
-        normalized_messages, images = self._normalize_messages(request.messages)
+        # Keep blocking image fetch/decode off the event loop so one slow image
+        # source does not stall the whole backend process.
+        normalized_messages, images = await asyncio.to_thread(
+            self._normalize_messages,
+            request.messages,
+        )
         try:
             prompt_text = self.processor.apply_chat_template(
                 normalized_messages,
