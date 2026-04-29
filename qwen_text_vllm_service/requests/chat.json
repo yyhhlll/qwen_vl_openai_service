@@ -1,0 +1,11 @@
+{
+  "model": "Qwen3.5-0.6B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "请用两句话介绍你自己。"
+    }
+  ],
+  "temperature": 0,
+  "max_tokens": 128
+}

@@ -42,9 +42,18 @@ class TransformersVLEngine:
         self.max_model_len: int = 0
         self.processor = None
         self.model = None
+        self.last_load_error: str | None = None
         self._load_lock = asyncio.Lock()
         self._cleanup_lock = asyncio.Lock()
         self._batches_since_cleanup = 0
+
+    @property
+    def is_loaded(self) -> bool:
+        return self.model is not None
+
+    @property
+    def is_loading(self) -> bool:
+        return self.model is None and self._load_lock.locked()
 
     async def ensure_loaded(self) -> None:
         async with self._load_lock:
@@ -62,24 +71,31 @@ class TransformersVLEngine:
                 "local_files_only": self.offline_mode,
             }
 
-            self.processor = AutoProcessor.from_pretrained(
-                self.model_path,
-                **pretrained_kwargs,
-            )
-            self.model = AutoModelForImageTextToText.from_pretrained(
-                self.model_path,
-                **pretrained_kwargs,
-                dtype=torch.float16,
-                attn_implementation="sdpa",
-                device_map=self.device_map,
-            ).eval()
-            if getattr(self.model, "generation_config", None) is not None:
-                self.model.generation_config.thinking = False
+            try:
+                self.processor = AutoProcessor.from_pretrained(
+                    self.model_path,
+                    **pretrained_kwargs,
+                )
+                self.model = AutoModelForImageTextToText.from_pretrained(
+                    self.model_path,
+                    **pretrained_kwargs,
+                    dtype=torch.float16,
+                    attn_implementation="sdpa",
+                    device_map=self.device_map,
+                ).eval()
+                if getattr(self.model, "generation_config", None) is not None:
+                    self.model.generation_config.thinking = False
 
-            config_max = getattr(
-                self.model.config, "max_position_embeddings", None
-            ) or getattr(self.model.config, "max_length", 32768)
-            self.max_model_len = self._user_max_model_len or config_max
+                config_max = getattr(
+                    self.model.config, "max_position_embeddings", None
+                ) or getattr(self.model.config, "max_length", 32768)
+                self.max_model_len = self._user_max_model_len or config_max
+                self.last_load_error = None
+            except Exception as exc:
+                self.processor = None
+                self.model = None
+                self.last_load_error = str(exc)
+                raise
 
     def _load_image(self, source: str) -> Any:
         from PIL import Image

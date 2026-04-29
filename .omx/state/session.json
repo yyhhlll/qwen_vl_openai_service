@@ -1,8 +1,8 @@
 {
-  "session_id": "019db843-2662-78d0-91e3-e49f3a187b38",
-  "native_session_id": "019db843-2662-78d0-91e3-e49f3a187b38",
-  "started_at": "2026-04-23T02:55:06.366Z",
+  "session_id": "omx-1777448747532-dzg6a0",
+  "native_session_id": "019dd3b7-2c3a-7310-8ef3-3ee888f2dcc1",
+  "started_at": "2026-04-29T07:45:49.762Z",
   "cwd": "/Users/yyhhl/Documents/New project/qwen_vl_openai_service",
-  "pid": 6163,
+  "pid": 21805,
   "platform": "darwin"
 }

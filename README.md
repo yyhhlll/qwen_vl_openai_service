@@ -23,7 +23,7 @@
   - `http(s)` 图片 URL
   - `data:image/...` base64 URL
 - 支持 Bearer Token 鉴权
-- 支持基于时间窗口的批量调度
+- 支持基于短时间窗口的 batch-size 批量推理
 - 支持代理层按“当前 in-flight 最少”选择后端
 - 返回 `usage.prompt_tokens` / `completion_tokens` / `total_tokens`
 - 请求里的 `model` 字段不会被强校验，响应中会原样回传，方便上层网关或评测工具传别名
@@ -32,11 +32,8 @@
 
 - `stream=true` 不是逐 token 实时流式推理，而是“完整生成结束后”再模拟成 SSE 分片输出。
 - 这是单进程 `transformers.generate(...)` 服务，不是 vLLM，也不提供 token 级连续批处理。
-- 代码里已经修复“整批纯文本请求”场景，但调度器还没有把“纯文本请求”和“含图请求”分桶。
-  - 如果同一批次里混入有图和无图请求，Qwen-VL processor 仍可能报错。
-  - 生产上最稳妥的设置仍然是 `MAX_BATCH_SIZE=1`，或者尽量保证同类请求进入同一实例。
-- 模型按首次请求懒加载，第一次请求会明显更慢。
-- 仓库当前没有 `requirements.txt`、`pyproject.toml` 或 `docker-compose.yml`，安装和部署步骤需要手动配置。
+- 调度器会把纯文本请求和含图请求拆成不同子批次，避免同一批次里混入有图/无图请求。
+- 模型默认可按首次请求懒加载；Docker Compose 部署默认 `LOAD_MODEL_ON_STARTUP=1`，容器启动时加载模型。
 
 ## 仓库结构
 
@@ -64,7 +61,7 @@ pip install fastapi uvicorn "pydantic>=2" httpx pillow transformers torch
 - 如果使用本地图片路径，路径必须对后端进程可见。
 - 当前部署默认是离线模式：
   - 模型和 processor 必须已经在本地模型目录里
-  - 默认禁止远程图片 URL
+  - 默认允许远程图片 URL；如需完全离线输入，可设置 `ALLOW_REMOTE_IMAGE_URLS=0`
 
 ## 环境变量
 
@@ -79,6 +76,12 @@ pip install fastapi uvicorn "pydantic>=2" httpx pillow transformers torch
 - `API_KEY`
   - 默认值：`1234`
   - 为空时不校验鉴权
+- `DEVICE_MAP`
+  - 默认值：`cuda`
+  - 强制模型加载到当前容器可见的 DCU/GPU；如需恢复自动放置，可显式设为 `auto`
+- `HIP_VISIBLE_DEVICES`
+  - Docker Compose 部署用于给每个后端实例绑定单张 DCU/GPU
+  - 当前镜像不要同时设置 `ROCR_VISIBLE_DEVICES`，否则 torch 可能无法正确初始化 HIP
 - `MAX_BATCH_SIZE`
   - 默认值：`4`
   - 每批最多处理多少请求
@@ -103,7 +106,7 @@ pip install fastapi uvicorn "pydantic>=2" httpx pillow transformers torch
   - 仍然支持本地图片路径和 `data:image/...` base64
   - 如需完全离线或禁用远程取图，可显式设为 `0`
 - `REMOTE_IMAGE_TIMEOUT_SECONDS`
-  - 默认值：`10`
+  - 默认值：`60`
   - 远程图片抓取超时时间（秒）
   - 用于避免内网图片源卡住时把整个请求长时间挂死
 
@@ -115,13 +118,14 @@ pip install fastapi uvicorn "pydantic>=2" httpx pillow transformers torch
 
 ## 启动单后端
 
-最稳妥的单实例启动方式：
+单实例 batch 推理启动方式：
 
 ```bash
 MODEL_PATH=/models/Qwen3.5-27B \
 MODEL_NAME=Qwen3.5-27B-VL \
 API_KEY=1234 \
-MAX_BATCH_SIZE=1 \
+DEVICE_MAP=cuda \
+MAX_BATCH_SIZE=4 \
 BATCH_WAIT_MS=50 \
 GPU_MEMORY_CLEANUP_INTERVAL=32 \
 OFFLINE_MODE=1 \
@@ -132,11 +136,12 @@ python3 -m uvicorn server:app --host 0.0.0.0 --port 8000
 
 ```bash
 HIP_VISIBLE_DEVICES=0,1,2,3 \
-ROCR_VISIBLE_DEVICES=0,1,2,3 \
 MODEL_PATH=/models/Qwen3.5-27B \
 MODEL_NAME=Qwen3.5-27B-VL \
 API_KEY=1234 \
-MAX_BATCH_SIZE=1 \
+DEVICE_MAP=cuda \
+MAX_BATCH_SIZE=4 \
+BATCH_WAIT_MS=50 \
 GPU_MEMORY_CLEANUP_INTERVAL=32 \
 OFFLINE_MODE=1 \
 python3 -m uvicorn server:app --host 0.0.0.0 --port 8000

@@ -39,6 +39,7 @@ except ImportError:
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen3.5-27B-VL")
 MODEL_PATH = os.getenv("MODEL_PATH", "/models/Qwen3.5-27B")
 API_KEY = os.getenv("API_KEY", "1234")
+DEVICE_MAP = os.getenv("DEVICE_MAP", "cuda")
 
 
 def _env_flag(name: str, default: str) -> bool:
@@ -72,9 +73,11 @@ GPU_MEMORY_CLEANUP_INTERVAL = max(
 OFFLINE_MODE = _env_flag("OFFLINE_MODE", "1")
 ALLOW_REMOTE_IMAGE_URLS = _env_flag("ALLOW_REMOTE_IMAGE_URLS", "1")
 REMOTE_IMAGE_TIMEOUT_SECONDS = float(os.getenv("REMOTE_IMAGE_TIMEOUT_SECONDS", "60"))
+LOAD_MODEL_ON_STARTUP = _env_flag("LOAD_MODEL_ON_STARTUP", "0")
 
 engine = TransformersVLEngine(
     MODEL_PATH,
+    device_map=DEVICE_MAP,
     max_model_len=MAX_MODEL_LEN,
     memory_cleanup_interval=GPU_MEMORY_CLEANUP_INTERVAL,
     offline_mode=OFFLINE_MODE,
@@ -96,6 +99,8 @@ def _verify_api_key(authorization: str | None) -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if LOAD_MODEL_ON_STARTUP:
+        await engine.ensure_loaded()
     await scheduler.start()
     yield
 
@@ -115,6 +120,9 @@ async def health() -> dict[str, object]:
     return {
         "ok": True,
         "model": MODEL_NAME,
+        "loaded": engine.is_loaded,
+        "loading": engine.is_loading,
+        "last_load_error": engine.last_load_error,
         "max_model_len": engine.max_model_len if engine.model is not None else None,
         "binding": {
             "device_map": engine.device_map,
@@ -133,7 +141,21 @@ async def health() -> dict[str, object]:
             "batch_wait_ms": scheduler.batch_wait_ms,
         },
         "memory_cleanup_interval": engine.memory_cleanup_interval,
+        "load_model_on_startup": LOAD_MODEL_ON_STARTUP,
     }
+
+
+@app.get("/ready")
+async def ready() -> JSONResponse:
+    payload = {
+        "ok": engine.is_loaded,
+        "model": MODEL_NAME,
+        "loaded": engine.is_loaded,
+        "loading": engine.is_loading,
+        "last_load_error": engine.last_load_error,
+    }
+    status_code = 200 if engine.is_loaded else 503
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 @app.get("/v1/models")

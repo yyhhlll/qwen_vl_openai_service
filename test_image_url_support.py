@@ -121,7 +121,7 @@ class ImageUrlSupportTests(unittest.TestCase):
 
         mocked_urlopen.assert_called_once_with(
             "http://10.2.0.129:9000/llm-detect/example.png",
-            timeout=10.0,
+            timeout=60.0,
         )
         self.assertEqual(opened_payloads, [b"remote-image-bytes"])
         self.assertEqual(loaded, {"mode": "RGB"})
@@ -165,6 +165,31 @@ class ImageUrlSupportTests(unittest.TestCase):
 
 
 class SchedulerBatchSplitTests(unittest.TestCase):
+    def test_scheduler_collects_requests_within_batch_window(self) -> None:
+        scheduler_module = _load_scheduler_module()
+        scheduler = scheduler_module.Scheduler(
+            engine=object(),
+            max_batch_size=3,
+            batch_wait_ms=50,
+        )
+        states = [
+            types.SimpleNamespace(images=[], name="text-a"),
+            types.SimpleNamespace(images=[], name="text-b"),
+            types.SimpleNamespace(images=[], name="text-c"),
+        ]
+
+        async def run_test() -> None:
+            for state in states:
+                await scheduler.submit(state)
+
+            batch = await scheduler._collect_batch()
+
+            self.assertEqual(batch, states)
+
+        import asyncio
+
+        asyncio.run(run_test())
+
     def test_scheduler_splits_text_and_image_requests(self) -> None:
         scheduler_module = _load_scheduler_module()
         scheduler = scheduler_module.Scheduler(engine=object())
