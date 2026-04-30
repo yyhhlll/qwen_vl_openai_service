@@ -1,25 +1,60 @@
 # Qwen3.5-4B 三机部署
 
-当前默认入口：`qwen35-proxy`，监听 `10.2.0.129:19000`。
+当前推荐对外入口：`qwen35-nginx`，监听 `10.2.0.129:8000`，并转发到 `qwen35-proxy` 的 `19000`。
 
-> 现在生产调用优先直接走 proxy，不走 nginx。`qwen35.nginx.conf` 仍保留为可选入口配置，但不是默认部署路径。
+> `qwen35.nginx.conf` 现在只作为总入口转发到 `qwen35-proxy:19000`；0.6B/4B 两阶段路由由 proxy.py 决定。不要让总入口 nginx 直接转发到 4B 后端池，否则文本不会先走 0.6B。
 
 ## 分配
 
+当前 19 张卡拆分为：0.6B 纯文本模型使用 `129:g0-g3`，4B 多模态模型使用剩余 15 张卡。
+
 - `129`
-  - GPU `0-7`
-  - 每张卡 1 个服务
-  - 后端端口 `8001-8008`
-  - `proxy` 入口 `19000`
+  - 4B 使用 GPU `4-7`
+  - 每张卡 1 个 4B 服务
+  - 4B 后端端口 `8005-8008`
+  - 0.6B 文本服务使用 GPU `0-3`，端口 `12001-12004`（见 `qwen_text_vllm_service/qwen35_text_deploy.md`）
+  - `proxy` 内部入口 `19000`
+  - `nginx` 对外入口 `8000`
 - `130`
-  - GPU `0-7`
-  - 每张卡 1 个服务
-  - 后端端口 `8001-8008`
+  - 4B 使用 GPU `0-7`
+  - 每张卡 1 个 4B 服务
+  - 4B 后端端口 `8001-8008`
 - `131`
-  - GPU `4-6`
-  - 每张卡 1 个服务
-  - 后端端口 `8001-8003`
+  - 4B 使用 GPU `4-6`
+  - 每张卡 1 个 4B 服务
+  - 4B 后端端口 `8001-8003`
   - 不部署 7 号卡；`8004` 不再属于 131
+
+## proxy 两阶段路由
+
+`qwen35-proxy` 仍对外暴露一个 OpenAI-compatible 入口，但内部维护两个后端池：
+
+- `TEXT_BACKEND_URLS`：0.6B 文本池，默认 `http://10.2.0.129:12001-12004`
+- `BACKEND_URLS`：4B 多模态池，默认 `129:8005-8008 + 130:8001-8008 + 131:8001-8003`
+
+路由规则：
+
+- 文本非流式请求先调用 0.6B；0.6B 明确返回合规时直接返回该结果。
+- 发给 0.6B 的首段请求体会被收敛为兼容最小格式：`model`、`messages`、`max_tokens`；不会把 `response_format`、`top_p`、`stop`、`seed`、`presence_penalty`、显式 `stream=false` 等 4B/客户端参数传给 0.6B。纯文本 content part 列表会压平成字符串。
+- 文本非流式请求若 0.6B 返回不合规、异常、模糊、非 2xx 或无法解析，则用原始请求体升级调用 4B 返回类别结果，只改写 4B 内部 `model`。
+- 图片/多模态请求直接调用 4B。
+- 所有 `stream=true` 请求直接调用 4B，保持 SSE 字节流透传；流式 chunk 中的 `model` 字段不做归一化保证。
+- `/v1/models` 返回确定性的 0.6B + 4B 模型列表，不再随机代理某一个后端。
+
+
+### 路由证明测试
+
+部署前后可在代码目录运行离线单元测试，证明三类路由和模型名重写逻辑：
+
+```bash
+python3 -m unittest test_proxy_routing.py
+```
+
+完整回归：
+
+```bash
+python3 -m unittest test_proxy_routing.py test_image_url_support.py test_engine_memory_cleanup.py
+```
 
 ## 目录
 
@@ -53,7 +88,7 @@ cd /root/qwen_vl_openai_service
 cd /root/qwen_vl_openai_service
 ```
 
-`129` 只保留 `qwen35-129-g0..g7` 和 `qwen35-proxy`：
+`129` 的 4B 只保留 `qwen35-129-g4..g7` 和 `qwen35-proxy`；`g0..g3` 留给 0.6B 文本服务：
 
 ```bash
 docker stop \
@@ -166,7 +201,7 @@ docker compose --profile host129 up -d --force-recreate
 
 `host129` profile 会同时启动：
 
-- `qwen35-129-g0` ... `qwen35-129-g7`
+- `qwen35-129-g4` ... `qwen35-129-g7`
 - `qwen35-proxy`
 
 如果只更新了 proxy 配置或只想重启 proxy：
@@ -178,7 +213,7 @@ docker compose --profile proxy up -d --force-recreate qwen35-proxy
 校验本机后端和 proxy：
 
 ```bash
-curl -s http://127.0.0.1:8001/ready
+curl -s http://127.0.0.1:8005/ready
 curl -s http://127.0.0.1:8008/ready
 curl -s http://127.0.0.1:19000/health
 curl -s http://127.0.0.1:19000/v1/models \
@@ -212,8 +247,8 @@ docker stop \
 ```bash
 docker compose ps
 docker logs --tail 100 qwen35-proxy
-docker logs --tail 100 qwen35-129-g0
-curl -s http://127.0.0.1:8001/ready
+docker logs --tail 100 qwen35-129-g4
+curl -s http://127.0.0.1:8005/ready
 curl -s http://127.0.0.1:19000/health
 ```
 
@@ -222,9 +257,9 @@ curl -s http://127.0.0.1:19000/health
 后端：
 
 ```bash
-curl -s http://127.0.0.1:8001/health
+curl -s http://127.0.0.1:8005/health
 curl -s http://127.0.0.1:8008/health
-curl -s http://127.0.0.1:8001/ready
+curl -s http://127.0.0.1:8005/ready
 curl -s http://127.0.0.1:8008/ready
 ```
 
@@ -310,7 +345,7 @@ curl -s http://127.0.0.1:8008/ready
 
 ### proxy 请求超时
 
-proxy 会按 `BACKEND_URLS` 在所有后端之间转发。若某些后端未 ready，聊天请求可能被分配到未就绪端口并超时。
+proxy 会按 `BACKEND_URLS` 在 4B 后端池之间转发，并按 `TEXT_BACKEND_URLS` 调用 0.6B 文本池。若某些后端未 ready，聊天请求可能被分配到未就绪端口并超时。
 
 先看 proxy 汇总健康：
 
@@ -321,35 +356,42 @@ curl -s http://127.0.0.1:19000/health
 再逐台逐端口查 ready：
 
 ```bash
-# 129
-for p in 8001 8002 8003 8004 8005 8006 8007 8008; do
+# 129 上 4B 只检查 8005-8008；8001-8004 留给已移除的旧 4B/0.6B 规划，不应作为 4B 后端
+for p in 8005 8006 8007 8008; do
   echo "129:$p"; curl -s "http://127.0.0.1:$p/ready"; echo
+done
+
+# 129 上 0.6B 文本池检查 12001-12004
+for p in 12001 12002 12003 12004; do
+  echo "129-text:$p"; curl -s "http://127.0.0.1:$p/v1/models" -H 'Authorization: Bearer 1234'; echo
 done
 
 # 130 在对应机器本机检查 8001-8008；131 只检查 8001-8003
 ```
 
-如果只想临时让 proxy 转发到 129 本机后端，可在启动 proxy 时覆盖后端池：
+如果只想临时让 proxy 转发到 129 本机后端，可在启动 proxy 时覆盖后端池。注意 4B 只能使用 `8005-8008`，0.6B 文本池使用 `12001-12004`：
 
 ```bash
-BACKEND_URLS=http://127.0.0.1:8001,http://127.0.0.1:8002,http://127.0.0.1:8003,http://127.0.0.1:8004,http://127.0.0.1:8005,http://127.0.0.1:8006,http://127.0.0.1:8007,http://127.0.0.1:8008 \
+BACKEND_URLS=http://127.0.0.1:8005,http://127.0.0.1:8006,http://127.0.0.1:8007,http://127.0.0.1:8008 \
+TEXT_BACKEND_URLS=http://127.0.0.1:12001,http://127.0.0.1:12002,http://127.0.0.1:12003,http://127.0.0.1:12004 \
 docker compose --profile proxy up -d --force-recreate qwen35-proxy
 ```
 
-### 可选：nginx 入口
+### nginx 总入口
 
-当前默认不走 nginx。如需启用 nginx，可单独启动：
+总入口 nginx 必须转发到 `qwen35-proxy:19000`。启动：
 
 ```bash
 docker compose --profile nginx up -d --force-recreate qwen35-nginx
 curl -s http://127.0.0.1:8000/health
+curl -s http://127.0.0.1:8000/v1/models -H 'Authorization: Bearer 1234'
 curl -s http://127.0.0.1:8000/nginx_status
 ```
 
-如果 nginx 日志里仍出现 `8009-8016` 或 `10.2.0.131:8004-8008`，说明 nginx 容器还在使用旧 upstream。先确认宿主机配置文件已经是新版：
+如果 nginx 配置里仍出现 `qwen35_backend`、`10.2.0.*:800*` 直连 4B upstream，说明总入口仍会绕过 proxy。先确认宿主机配置文件已经是新版：
 
 ```bash
-grep -nE '8009|8010|8011|8012|8013|8014|8015|8016|10\.2\.0\.131:800[4-8]' qwen35.nginx.conf || echo "host nginx config clean"
+grep -nE 'qwen35_backend|10\.2\.0\.(129|130|131):800[0-9]' qwen35.nginx.conf && echo "ERROR: nginx bypasses proxy" || echo "host nginx routes only to proxy"
 ```
 
 再强制重建 nginx 容器：
@@ -358,10 +400,9 @@ grep -nE '8009|8010|8011|8012|8013|8014|8015|8016|10\.2\.0\.131:800[4-8]' qwen35
 docker compose --profile nginx up -d --force-recreate qwen35-nginx
 ```
 
-最后确认容器内实际加载的配置也没有旧端口：
+最后确认容器内实际加载的配置也只转发到 proxy：
 
 ```bash
 docker exec qwen35-nginx nginx -T 2>/dev/null | \
-  grep -E '8009|8010|8011|8012|8013|8014|8015|8016|10\.2\.0\.131:800[4-8]' \
-  || echo "nginx upstream clean"
+  grep -nE 'qwen35_proxy_gateway|127\.0\.0\.1:19000|proxy_pass http://qwen35_proxy_gateway'
 ```

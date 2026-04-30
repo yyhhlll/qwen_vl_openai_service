@@ -9,7 +9,7 @@
 
 部署层也支持一个额外的可选入口：
 
-- `qwen35.nginx.conf`：给多机多后端做 `nginx` 负载均衡
+- `qwen35.nginx.conf`：总入口 nginx，转发到 `qwen35-proxy:19000`
 
 ## 当前能力
 
@@ -44,7 +44,7 @@
 - [protocol.py](/Users/yyhhl/Documents/New%20project/qwen_vl_openai_service/protocol.py): OpenAI 兼容请求/响应协议模型
 - [state.py](/Users/yyhhl/Documents/New%20project/qwen_vl_openai_service/state.py): 单请求运行状态
 - [test_safety_compliance.py](/Users/yyhhl/Documents/New%20project/qwen_vl_openai_service/test_safety_compliance.py): 本地安全审查/合规提示词测试脚本
-- [qwen35.nginx.conf](/Users/yyhhl/Documents/New%20project/qwen_vl_openai_service/qwen35.nginx.conf): 三机多后端 `nginx` 入口配置
+- [qwen35.nginx.conf](/Users/yyhhl/Documents/New%20project/qwen_vl_openai_service/qwen35.nginx.conf): 总入口 `nginx` 配置，转发到 `qwen35-proxy:19000`
   - 已针对大模型长上下文请求做了入口调优：增大 `client_body_buffer_size`，并关闭 `proxy_request_buffering`，避免大请求体频繁落盘后再转发
 
 ## 依赖
@@ -113,8 +113,14 @@ pip install fastapi uvicorn "pydantic>=2" httpx pillow transformers torch
 代理 `proxy.py` 额外使用：
 
 - `BACKEND_URLS`
-  - 默认值：`http://127.0.0.1:8001,http://127.0.0.1:8002,http://127.0.0.1:8003,http://127.0.0.1:8004`
-  - 逗号分隔的后端地址列表
+  - 4B 多模态后端地址列表；生产默认由 `docker-compose.yml` 设置为 `129:8005-8008 + 130:8001-8008 + 131:8001-8003`
+  - 兼容旧变量名；也可用 `VISION_BACKEND_URLS` / `BACKEND_URLS_4B`
+- `TEXT_BACKEND_URLS`
+  - 0.6B 文本后端地址列表；生产默认 `http://10.2.0.129:12001,http://10.2.0.129:12002,http://10.2.0.129:12003,http://10.2.0.129:12004`
+- `TEXT_MODEL_NAME` / `VISION_MODEL_NAME`
+  - 内部转发到不同后端时会重写 `model` 字段；非流式响应尽量恢复调用方原始 `model`
+  - 转发到 0.6B 文本池时使用兼容最小请求体：`model`、`messages`、`max_tokens`；会剥离 `response_format`、`top_p`、`stop`、`seed`、`presence_penalty`、显式 `stream=false` 等容易导致 0.6B vLLM 报错的参数。若 `messages[].content` 是纯文本 part 列表，会压平成字符串。
+  - 升级到 4B 或图片直达 4B 时保留原始请求参数，仅改写内部 `model`。
 
 ## 启动单后端
 
@@ -149,27 +155,27 @@ python3 -m uvicorn server:app --host 0.0.0.0 --port 8000
 
 ## 启动统一代理
 
-先分别启动多个后端实例，例如：
+先分别启动 4B 多模态后端和 0.6B 文本后端，例如在 `129` 本机：
 
-- `http://127.0.0.1:8001`
-- `http://127.0.0.1:8002`
-- `http://127.0.0.1:8003`
-- `http://127.0.0.1:8004`
+- 4B：`http://127.0.0.1:8005` ... `http://127.0.0.1:8008`
+- 0.6B：`http://127.0.0.1:12001` ... `http://127.0.0.1:12004`
 
 然后启动代理：
 
 ```bash
 API_KEY=1234 \
-BACKEND_URLS=http://127.0.0.1:8001,http://127.0.0.1:8002,http://127.0.0.1:8003,http://127.0.0.1:8004 \
+BACKEND_URLS=http://127.0.0.1:8005,http://127.0.0.1:8006,http://127.0.0.1:8007,http://127.0.0.1:8008 \
+TEXT_BACKEND_URLS=http://127.0.0.1:12001,http://127.0.0.1:12002,http://127.0.0.1:12003,http://127.0.0.1:12004 \
 python3 -m uvicorn proxy:app --host 0.0.0.0 --port 8000
 ```
 
 代理会：
 
 - 暴露同样的 `/health`、`/v1/models`、`/v1/chat/completions`
-- 维护每个后端的 in-flight 计数
-- 优先把新请求发给当前负载最轻的后端
-- 透明转发 SSE 流式响应
+- 维护 0.6B 文本池和 4B 多模态池的 in-flight 计数
+- 文本非流式请求先走 0.6B；明确合规则直接返回，否则升级 4B
+- 图片/多模态请求和所有 `stream=true` 请求直接走 4B
+- 透明转发 SSE 流式响应；流式 chunk 的 `model` 字段不做归一化保证
 
 ## 接口示例
 

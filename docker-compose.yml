@@ -44,50 +44,17 @@ x-proxy-common: &proxy-common
     - .:/app/qwen_vl_openai_service
   environment:
     API_KEY: ${API_KEY:-1234}
+    VISION_MODEL_NAME: ${VISION_MODEL_NAME:-Qwen3.5-4B}
+    TEXT_MODEL_NAME: ${TEXT_MODEL_NAME:-Qwen3.5-0.6B}
     BACKEND_URLS: >-
-      ${BACKEND_URLS:-http://10.2.0.129:8001,http://10.2.0.129:8002,http://10.2.0.129:8003,http://10.2.0.129:8004,
-      http://10.2.0.129:8005,http://10.2.0.129:8006,http://10.2.0.129:8007,http://10.2.0.129:8008,
+      ${BACKEND_URLS:-http://10.2.0.129:8005,http://10.2.0.129:8006,http://10.2.0.129:8007,http://10.2.0.129:8008,
       http://10.2.0.130:8001,http://10.2.0.130:8002,http://10.2.0.130:8003,http://10.2.0.130:8004,
       http://10.2.0.130:8005,http://10.2.0.130:8006,http://10.2.0.130:8007,http://10.2.0.130:8008,
       http://10.2.0.131:8001,http://10.2.0.131:8002,http://10.2.0.131:8003}
+    TEXT_BACKEND_URLS: >-
+      ${TEXT_BACKEND_URLS:-http://10.2.0.129:12001,http://10.2.0.129:12002,http://10.2.0.129:12003,http://10.2.0.129:12004}
 
 services:
-  qwen35-129-g0:
-    <<: *backend-common
-    container_name: qwen35-129-g0
-    profiles: ["host129"]
-    environment:
-      <<: *backend-env
-      HIP_VISIBLE_DEVICES: "0"
-    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8001"]
-
-  qwen35-129-g1:
-    <<: *backend-common
-    container_name: qwen35-129-g1
-    profiles: ["host129"]
-    environment:
-      <<: *backend-env
-      HIP_VISIBLE_DEVICES: "1"
-    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8002"]
-
-  qwen35-129-g2:
-    <<: *backend-common
-    container_name: qwen35-129-g2
-    profiles: ["host129"]
-    environment:
-      <<: *backend-env
-      HIP_VISIBLE_DEVICES: "2"
-    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8003"]
-
-  qwen35-129-g3:
-    <<: *backend-common
-    container_name: qwen35-129-g3
-    profiles: ["host129"]
-    environment:
-      <<: *backend-env
-      HIP_VISIBLE_DEVICES: "3"
-    command: ["bash", "-lc", "python3 -m uvicorn server:app --app-dir /app/qwen_vl_openai_service --host 0.0.0.0 --port 8004"]
-
   qwen35-129-g4:
     <<: *backend-common
     container_name: qwen35-129-g4

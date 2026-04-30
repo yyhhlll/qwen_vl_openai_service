@@ -58,7 +58,7 @@ services:
       VLLM_PORT: "12000"
       MASTER_PORT: "12100"
 
-  # 10.2.0.129: 8 张卡，端口 12001-12008。
+  # 10.2.0.129: 4 张卡，端口 12001-12004。
   qwen35-text-129-g0:
     <<: *vllm-common
     container_name: qwen35-text-129-g0
@@ -82,98 +82,6 @@ services:
     container_name: qwen35-text-129-g3
     profiles: ["host129"]
     environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "3", VLLM_PORT: "12004", MASTER_PORT: "12104" }
-
-  qwen35-text-129-g4:
-    <<: *vllm-common
-    container_name: qwen35-text-129-g4
-    profiles: ["host129"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "4", VLLM_PORT: "12005", MASTER_PORT: "12105" }
-
-  qwen35-text-129-g5:
-    <<: *vllm-common
-    container_name: qwen35-text-129-g5
-    profiles: ["host129"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "5", VLLM_PORT: "12006", MASTER_PORT: "12106" }
-
-  qwen35-text-129-g6:
-    <<: *vllm-common
-    container_name: qwen35-text-129-g6
-    profiles: ["host129"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "6", VLLM_PORT: "12007", MASTER_PORT: "12107" }
-
-  qwen35-text-129-g7:
-    <<: *vllm-common
-    container_name: qwen35-text-129-g7
-    profiles: ["host129"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "7", VLLM_PORT: "12008", MASTER_PORT: "12108" }
-
-  # 10.2.0.130: 8 张卡，端口 12001-12008。
-  qwen35-text-130-g0:
-    <<: *vllm-common
-    container_name: qwen35-text-130-g0
-    profiles: ["host130"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "0", VLLM_PORT: "12001", MASTER_PORT: "12101" }
-
-  qwen35-text-130-g1:
-    <<: *vllm-common
-    container_name: qwen35-text-130-g1
-    profiles: ["host130"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "1", VLLM_PORT: "12002", MASTER_PORT: "12102" }
-
-  qwen35-text-130-g2:
-    <<: *vllm-common
-    container_name: qwen35-text-130-g2
-    profiles: ["host130"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "2", VLLM_PORT: "12003", MASTER_PORT: "12103" }
-
-  qwen35-text-130-g3:
-    <<: *vllm-common
-    container_name: qwen35-text-130-g3
-    profiles: ["host130"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "3", VLLM_PORT: "12004", MASTER_PORT: "12104" }
-
-  qwen35-text-130-g4:
-    <<: *vllm-common
-    container_name: qwen35-text-130-g4
-    profiles: ["host130"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "4", VLLM_PORT: "12005", MASTER_PORT: "12105" }
-
-  qwen35-text-130-g5:
-    <<: *vllm-common
-    container_name: qwen35-text-130-g5
-    profiles: ["host130"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "5", VLLM_PORT: "12006", MASTER_PORT: "12106" }
-
-  qwen35-text-130-g6:
-    <<: *vllm-common
-    container_name: qwen35-text-130-g6
-    profiles: ["host130"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "6", VLLM_PORT: "12007", MASTER_PORT: "12107" }
-
-  qwen35-text-130-g7:
-    <<: *vllm-common
-    container_name: qwen35-text-130-g7
-    profiles: ["host130"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "7", VLLM_PORT: "12008", MASTER_PORT: "12108" }
-
-  # 10.2.0.131: 沿用原项目可用 GPU 4-6，端口 12001-12003。
-  qwen35-text-131-g4:
-    <<: *vllm-common
-    container_name: qwen35-text-131-g4
-    profiles: ["host131"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "4", VLLM_PORT: "12001", MASTER_PORT: "12101" }
-
-  qwen35-text-131-g5:
-    <<: *vllm-common
-    container_name: qwen35-text-131-g5
-    profiles: ["host131"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "5", VLLM_PORT: "12002", MASTER_PORT: "12102" }
-
-  qwen35-text-131-g6:
-    <<: *vllm-common
-    container_name: qwen35-text-131-g6
-    profiles: ["host131"]
-    environment: { <<: *vllm-env, HIP_VISIBLE_DEVICES: "6", VLLM_PORT: "12003", MASTER_PORT: "12103" }
 
   qwen35-text-nginx:
     image: ${NGINX_IMAGE:-nginx:stable-alpine}

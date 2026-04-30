@@ -12,7 +12,8 @@
 - API Key：默认 `1234`；
 - 三机所有后端统一只设置 `HIP_VISIBLE_DEVICES`，不要设置 `ROCR_VISIBLE_DEVICES`；统一保留 `DEVICE_MAP=cuda`；每个后端容器还设置唯一 `MASTER_PORT`，避免 vLLM/torch 分布式初始化时在 host 网络模式下抢同一个内部通信端口。
 - 单实例参考端口：`12000`；
-- Compose 集群入口端口：nginx `12000`，后端 `12001+`。
+- Compose 集群入口端口：nginx `12000`，后端固定 `12001-12004`。
+- 当前资源规划：0.6B 只部署在 `10.2.0.129:g0-g3`，其余 GPU 留给 4B 多模态服务。
 
 ## 2. 部署前检查
 
@@ -32,7 +33,7 @@ docker image inspect image.sourcefind.cn:5000/dcu/admin/base/vllm:0.8.5-ubuntu22
 确认目标端口未被占用：
 
 ```bash
-ss -lntp | grep -E ':12000|:12001|:12002|:12003|:12004|:12005|:12006|:12007|:12008' || true
+ss -lntp | grep -E ':12000|:12001|:12002|:12003|:12004' || true
 ```
 
 确认三机 compose 配置没有错误的 `ROCR_VISIBLE_DEVICES`，且后端保留 `DEVICE_MAP=cuda`：
@@ -108,7 +109,7 @@ docker compose --profile single stop
 
 ## 4. 多机多 GPU 后端启动
 
-Compose 给 nginx 入口保留 `12000`，后端实例从 `12001` 开始。
+Compose 给 nginx 入口保留 `12000`，后端实例固定使用 `10.2.0.129` 的 GPU `0-3`。
 
 ### 10.2.0.129
 
@@ -122,32 +123,10 @@ docker compose --profile host129 up -d
 - `qwen35-text-129-g1` → GPU 1 → `12002`
 - `qwen35-text-129-g2` → GPU 2 → `12003`
 - `qwen35-text-129-g3` → GPU 3 → `12004`
-- `qwen35-text-129-g4` → GPU 4 → `12005`
-- `qwen35-text-129-g5` → GPU 5 → `12006`
-- `qwen35-text-129-g6` → GPU 6 → `12007`
-- `qwen35-text-129-g7` → GPU 7 → `12008`
 
-### 10.2.0.130
+### 10.2.0.130 / 10.2.0.131
 
-```bash
-docker compose --profile host130 up -d
-```
-
-实例端口同 129：GPU 0-7 → `12001-12008`。
-
-### 10.2.0.131
-
-沿用原项目资源规划，仅启用 GPU 4-6：
-
-```bash
-docker compose --profile host131 up -d
-```
-
-实例：
-
-- `qwen35-text-131-g4` → GPU 4 → `12001`
-- `qwen35-text-131-g5` → GPU 5 → `12002`
-- `qwen35-text-131-g6` → GPU 6 → `12003`
+当前 0.6B 文本模型不再占用 `130` 或 `131` 的 GPU；这些机器的 GPU 留给 4B 多模态服务。
 
 ## 5. nginx 聚合入口
 
@@ -244,3 +223,14 @@ docker compose --profile nginx stop
 ```bash
 docker compose --profile single stop
 ```
+
+
+## 7. 路由证明测试
+
+从项目根目录运行：
+
+```bash
+python3 -m unittest test_proxy_routing.py
+```
+
+该测试会验证：文本合规只打 0.6B、文本不合规先 0.6B 再 4B、图片和流式请求直接 4B，以及 0.6B 只保留 `129:g0-g3` 的配置约束。
