@@ -29,6 +29,8 @@ htmlcov/
 # Logs and runtime files
 *.log
 *.pid
+*.jsonl
+.omx/
 
 # Environment and local config
 .env
@@ -38,14 +40,28 @@ htmlcov/
 # IDE/editor settings
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # OS files
 .DS_Store
+.AppleDouble
+.LSOverride
 
 # Jupyter
 .ipynb_checkpoints/
 
 # Model/data artifacts (keep repo lightweight)
 /models/
+models/
 checkpoints/
 outputs/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.gguf
+*.tar
+*.tar.gz
+*.zip

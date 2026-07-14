@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from copy import deepcopy
@@ -27,6 +28,7 @@ LOGGER = logging.getLogger("qwen35_proxy")
 API_KEY = os.getenv("API_KEY", "1234")
 TEXT_MODEL_NAME = os.getenv("TEXT_MODEL_NAME", "Qwen3.5-0.6B")
 VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", "Qwen3.5-4B")
+TEXT_BACKEND_MAX_TOKENS = int(os.getenv("TEXT_BACKEND_MAX_TOKENS", "128"))
 DEFAULT_VISION_BACKENDS = (
     "http://127.0.0.1:8001,http://127.0.0.1:8002,"
     "http://127.0.0.1:8003,http://127.0.0.1:8004"
@@ -70,10 +72,23 @@ class BackendPool:
         self.model_name = model_name
         self._lock = asyncio.Lock()
         self._inflight: dict[str, int] = {backend: 0 for backend in urls}
+        self._cursor = 0
 
     async def pick(self) -> str:
         async with self._lock:
-            return min(self.urls, key=lambda backend: (self._inflight[backend], backend))
+            best_backend = self.urls[self._cursor % len(self.urls)]
+            best_index = self._cursor % len(self.urls)
+            best_load = self._inflight[best_backend]
+            for offset in range(len(self.urls)):
+                index = (self._cursor + offset) % len(self.urls)
+                backend = self.urls[index]
+                load = self._inflight[backend]
+                if load < best_load:
+                    best_backend = backend
+                    best_index = index
+                    best_load = load
+            self._cursor = (best_index + 1) % len(self.urls)
+            return best_backend
 
     async def mark_start(self, backend: str) -> None:
         async with self._lock:
@@ -123,20 +138,47 @@ def _text_content_to_string(content: Any) -> Any:
     return "\n".join(text_parts)
 
 
-def _messages_for_text_backend(messages: Any) -> Any:
+def _extract_last_user_text(messages: Any) -> str:
     if not isinstance(messages, list):
-        return messages
-    normalized: list[dict[str, Any]] = []
-    for message in messages:
-        if not isinstance(message, dict):
-            normalized.append(message)
+        return ""
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "user":
             continue
-        text_message = {
-            "role": message.get("role"),
-            "content": _text_content_to_string(message.get("content")),
-        }
-        normalized.append(text_message)
-    return normalized
+        content = _text_content_to_string(message.get("content"))
+        return content if isinstance(content, str) else ""
+    return ""
+
+
+def _unwrap_user_input_text(text: str) -> str:
+    stripped = (text or "").strip()
+    if not stripped:
+        return ""
+
+    # Common llm-detect prompt shape:
+    # 待分析用户输入：
+    # ```真实用户文本```
+    fenced = re.findall(r"```(?:[a-zA-Z0-9_-]+\n)?(.*?)```", stripped, re.DOTALL)
+    if fenced:
+        return fenced[-1].strip()
+
+    # Business-test prompt shape: 请审核以下业务数据： followed by {"content": "..."}
+    marker = "请审核以下业务数据："
+    candidate = stripped.split(marker, 1)[1].strip() if marker in stripped else stripped
+    if candidate.startswith("{"):
+        try:
+            parsed = json.loads(candidate)
+            content = parsed.get("content") if isinstance(parsed, dict) else None
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+        except json.JSONDecodeError:
+            pass
+
+    return stripped
+
+
+def _messages_for_text_backend(messages: Any) -> list[dict[str, str]]:
+    user_text = _unwrap_user_input_text(_extract_last_user_text(messages))
+    return [{"role": "user", "content": user_text}]
 
 
 def _body_for_backend(body: dict[str, Any], model_name: str, *, text_backend: bool = False) -> dict[str, Any]:
@@ -144,6 +186,11 @@ def _body_for_backend(body: dict[str, Any], model_name: str, *, text_backend: bo
         backend_body = {key: deepcopy(body[key]) for key in TEXT_BACKEND_ALLOWED_KEYS if key in body}
         if "messages" in backend_body:
             backend_body["messages"] = _messages_for_text_backend(backend_body["messages"])
+        requested_max_tokens = backend_body.get("max_tokens")
+        if isinstance(requested_max_tokens, int):
+            backend_body["max_tokens"] = max(1, min(requested_max_tokens, TEXT_BACKEND_MAX_TOKENS))
+        else:
+            backend_body["max_tokens"] = TEXT_BACKEND_MAX_TOKENS
     else:
         backend_body = deepcopy(body)
     backend_body["model"] = model_name
@@ -155,6 +202,42 @@ def _normalize_response_model(payload: Any, requested_model: str | None) -> Any:
         payload = deepcopy(payload)
         payload["model"] = requested_model
     return payload
+
+
+def _original_request_expects_report(body: dict[str, Any]) -> bool:
+    messages = body.get("messages", [])
+    if not isinstance(messages, list):
+        return False
+    joined: list[str] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        text = _text_content_to_string(content)
+        if isinstance(text, str):
+            joined.append(text)
+    prompt = "\n".join(joined)
+    return '"report"' in prompt or "'report'" in prompt or "合规检测报告" in prompt or "Markdown 文本" in prompt
+
+
+def _business_safe_json(body: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {"is_safty": True, "unsafy_class": []}
+    if _original_request_expects_report(body):
+        result["report"] = "### ✅ 合规检测结果\n\n未检测到违规风险。该内容可由系统安全处理。"
+    return result
+
+
+def _normalize_text_compliant_payload(response_payload: Any, requested_model: str | None, original_body: dict[str, Any]) -> Any:
+    """Return business-compatible JSON content for 0.6B safe short-circuit."""
+    if not isinstance(response_payload, dict):
+        return response_payload
+    payload = deepcopy(response_payload)
+    choices = payload.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        message = choices[0].get("message")
+        if isinstance(message, dict):
+            message["content"] = json.dumps(_business_safe_json(original_body), ensure_ascii=False)
+    return _normalize_response_model(payload, requested_model)
 
 
 def _contains_image_content(content: Any) -> bool:
@@ -522,7 +605,7 @@ async def chat_completions(
                 headers = {"X-Qwen-Route": "text_0_6b_only", **text_headers}
                 return JSONResponse(
                     status_code=text_response.status_code,
-                    content=_normalize_response_model(text_payload, requested_model),
+                    content=_normalize_text_compliant_payload(text_payload, requested_model, body),
                     headers=headers,
                 )
             LOGGER.info("route_escalate=text_0_6b_not_confident requested_model=%s elapsed_ms=%.1f", requested_model, text_elapsed_ms)

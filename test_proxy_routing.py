@@ -226,6 +226,23 @@ def load_proxy():
         return importlib.import_module("proxy")
 
 
+class BackendPoolSelectionTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.proxy = load_proxy()
+
+    async def test_pick_round_robins_when_inflight_ties(self) -> None:
+        pool = self.proxy.BackendPool("test", ["http://b1", "http://b2", "http://b3"], "model")
+        picked = [await pool.pick() for _ in range(6)]
+        self.assertEqual(picked, ["http://b1", "http://b2", "http://b3", "http://b1", "http://b2", "http://b3"])
+
+    async def test_pick_prefers_lower_inflight_then_resumes_rotation(self) -> None:
+        pool = self.proxy.BackendPool("test", ["http://b1", "http://b2", "http://b3"], "model")
+        await pool.mark_start("http://b1")
+        self.assertEqual(await pool.pick(), "http://b2")
+        self.assertEqual(await pool.pick(), "http://b3")
+        self.assertEqual(await pool.pick(), "http://b2")
+
+
 class ProxyRoutingTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.proxy = load_proxy()
@@ -246,7 +263,7 @@ class ProxyRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.calls[0]["json"]["model"], "Qwen3.5-0.6B")
         payload = self.response_json(response)
         self.assertEqual(payload["model"], "external-compliance")
-        self.assertEqual(payload["choices"][0]["message"]["content"], '{"compliant": true}')
+        self.assertEqual(json.loads(payload["choices"][0]["message"]["content"]), {"is_safty": True, "unsafy_class": []})
         self.assertEqual(response.headers["X-Qwen-Route"], "text_0_6b_only")
         self.assertEqual(response.headers["X-Qwen-Text-Backend"], TEXT_URL)
 
@@ -341,11 +358,14 @@ class ProxyRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.stream_calls), 1)
         self.assertTrue(client.stream_calls[0]["url"].startswith(VISION_URL))
 
-    async def test_text_backend_receives_minimal_0_6b_safe_body(self) -> None:
+    async def test_text_backend_receives_only_user_input_for_0_6b(self) -> None:
         client = FakeClient({"text": [chat_response('{"compliant": true}')]})
         body = {
             "model": "external-compliance",
-            "messages": [{"role": "user", "content": "hello"}],
+            "messages": [
+                {"role": "system", "content": "very long TC260/Y1 classification prompt"},
+                {"role": "user", "content": "待分析用户输入：\n```hello```"},
+            ],
             "stream": False,
             "temperature": 0,
             "top_p": 0.8,
@@ -353,7 +373,7 @@ class ProxyRoutingTests(unittest.IsolatedAsyncioTestCase):
             "stop": ["END"],
             "seed": 7,
             "presence_penalty": 0.5,
-            "max_tokens": 64,
+            "max_tokens": 4096,
         }
         await self.call_chat(body, client)
         upstream = client.calls[0]["json"]
@@ -362,7 +382,7 @@ class ProxyRoutingTests(unittest.IsolatedAsyncioTestCase):
             {
                 "model": "Qwen3.5-0.6B",
                 "messages": [{"role": "user", "content": "hello"}],
-                "max_tokens": 64,
+                "max_tokens": 128,
             },
         )
 
@@ -384,6 +404,23 @@ class ProxyRoutingTests(unittest.IsolatedAsyncioTestCase):
         await self.call_chat(body, client)
         upstream = client.calls[0]["json"]
         self.assertEqual(upstream["messages"], [{"role": "user", "content": "hello\nworld"}])
+        self.assertEqual(upstream["max_tokens"], 128)
+
+    async def test_business_json_content_is_extracted_for_0_6b(self) -> None:
+        client = FakeClient({"text": [chat_response('{"compliant": true}')]})
+        body = {
+            "model": "external-compliance",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": '请审核以下业务数据：\n{"data_id":"1","content":"真实业务文本"}',
+                }
+            ],
+            "stream": False,
+        }
+        await self.call_chat(body, client)
+        upstream = client.calls[0]["json"]
+        self.assertEqual(upstream["messages"], [{"role": "user", "content": "真实业务文本"}])
 
     async def test_vision_fallback_preserves_original_options_except_model(self) -> None:
         client = FakeClient({"text": [chat_response('{"compliant": false}')], "vision": [chat_response('{"category":"risk"}')]})
